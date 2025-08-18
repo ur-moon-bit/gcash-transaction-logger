@@ -1,0 +1,1151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+    <title>GCash Transaction Logger</title>
+    <meta name="theme-color" content="#667eea">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="GCash Logger">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+            min-height: 100vh; min-height: 100dvh; /* dvh for mobile browsers */
+            padding: 20px; color: #333;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            overflow-x: hidden;
+        }
+        .floating-bg { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: -1; }
+        .floating-circle {
+            position: absolute; border-radius: 50%; 
+            background: linear-gradient(45deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05));
+            backdrop-filter: blur(10px); animation: float 20s infinite ease-in-out;
+        }
+        .floating-circle:nth-child(1) { width: 300px; height: 300px; top: -150px; left: -150px; }
+        .floating-circle:nth-child(2) { width: 200px; height: 200px; top: 20%; right: -100px; animation-delay: 5s; }
+        .floating-circle:nth-child(3) { width: 150px; height: 150px; bottom: 20%; left: 10%; animation-delay: 10s; }
+        @keyframes float {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            25% { transform: translate(30px, -30px) rotate(90deg); }
+            50% { transform: translate(-20px, 20px) rotate(180deg); }
+            75% { transform: translate(20px, -10px) rotate(270deg); }
+        }
+        .loading-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100vh; height: 100dvh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+            display: flex; justify-content: center; align-items: center; z-index: 2000;
+            transition: opacity 0.5s ease, visibility 0.5s ease;
+        }
+        .loading-spinner {
+            width: 60px; height: 60px; border: 4px solid rgba(255,255,255,0.3);
+            border-top: 4px solid white; border-radius: 50%;
+            animation: spin 1s linear infinite; margin: 0 auto 20px;
+        }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        .pin-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100vh; height: 100dvh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+            display: flex; justify-content: center; align-items: center; z-index: 1000;
+            transition: opacity 0.5s ease, visibility 0.5s ease;
+        }
+        .pin-container {
+            background: rgba(255,255,255,0.15); backdrop-filter: blur(20px);
+            border-radius: 25px; padding: 40px; text-align: center;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.2);
+            max-width: 400px; width: 90%; margin: 20px;
+        }
+        .pin-header { color: white; margin-bottom: 30px; }
+        .pin-header h2 { font-size: 28px; font-weight: 700; margin-bottom: 10px; }
+        .pin-input-container { display: flex; justify-content: center; gap: 15px; margin: 30px 0; }
+        .pin-box {
+            width: 60px; height: 60px; border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 15px; background: rgba(255,255,255,0.1); color: white;
+            font-size: 24px; font-weight: bold; text-align: center; outline: none;
+            transition: all 0.3s ease; backdrop-filter: blur(10px);
+            -webkit-appearance: none; /* Remove iOS styling */
+        }
+        .pin-box:focus { border-color: #4CAF50; background: rgba(76,175,80,0.2); box-shadow: 0 0 20px rgba(76,175,80,0.4); transform: scale(1.05); }
+        .pin-box.error { border-color: #f44336; background: rgba(244,67,54,0.2); animation: shake 0.5s ease-in-out; }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-10px); }
+            75% { transform: translateX(10px); }
+        }
+        .pin-error { color: #ff6b6b; margin-top: 10px; font-weight: 600; opacity: 0; transition: opacity 0.3s ease; }
+        .pin-error.show { opacity: 1; }
+        .pin-submit {
+            background: linear-gradient(135deg, #4CAF50, #45a049); color: white; border: none;
+            padding: 15px 30px; border-radius: 25px; font-size: 16px; font-weight: 600;
+            cursor: pointer; margin-top: 20px; transition: all 0.3s ease;
+            box-shadow: 0 8px 25px rgba(76,175,80,0.3); min-height: 48px; /* Touch target */
+            -webkit-tap-highlight-color: transparent;
+        }
+        .pin-submit:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 12px 35px rgba(76,175,80,0.4); }
+        .pin-submit:disabled { background: rgba(255,255,255,0.2); cursor: not-allowed; }
+        .app-container { opacity: 0; visibility: hidden; transition: opacity 0.5s ease, visibility 0.5s ease; }
+        .app-container.show { opacity: 1; visibility: visible; }
+        .container {
+            max-width: 480px; margin: 0 auto; background: rgba(255,255,255,0.15);
+            backdrop-filter: blur(20px); border-radius: 25px; padding: 30px;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.2);
+        }
+        .top-bar { 
+            display: flex; justify-content: space-between; align-items: center; 
+            margin-bottom: 20px; flex-wrap: wrap; gap: 10px;
+        }
+        .connection-status {
+            padding: 6px 12px; border-radius: 12px; font-size: 12px; font-weight: 600;
+            display: flex; align-items: center; gap: 5px; white-space: nowrap;
+        }
+        .connection-status.online { background: rgba(76,175,80,0.2); color: #4CAF50; border: 1px solid rgba(76,175,80,0.3); }
+        .connection-status.offline { background: rgba(244,67,54,0.2); color: #f44336; border: 1px solid rgba(244,67,54,0.3); }
+        .logout-btn {
+            background: linear-gradient(135deg, #ff6b6b, #ff5252); color: white; border: none;
+            border-radius: 12px; padding: 10px 16px; cursor: pointer; font-size: 14px; font-weight: 600;
+            transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(255,82,82,0.3);
+            min-height: 44px; -webkit-tap-highlight-color: transparent;
+        }
+        .logout-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(255,82,82,0.4); }
+        .header { text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid rgba(255,255,255,0.2); }
+        .header h1 { color: white; font-size: clamp(24px, 5vw, 28px); margin-bottom: 10px; font-weight: 700; }
+        .header p { color: rgba(255,255,255,0.9); font-size: clamp(14px, 3vw, 16px); }
+        .summary {
+            background: rgba(255,255,255,0.1); backdrop-filter: blur(15px);
+            padding: 20px; border-radius: 20px; margin-bottom: 30px;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .summary h3 { text-align: center; margin-bottom: 20px; color: white; font-size: 18px; font-weight: 600; }
+        .stats-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); 
+            gap: 15px; 
+        }
+        .stat-card {
+            background: rgba(255,255,255,0.15); backdrop-filter: blur(10px);
+            padding: 15px; border-radius: 15px; text-align: center;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.1); border: 1px solid rgba(255,255,255,0.2);
+            transition: all 0.3s ease; min-height: 80px; display: flex; flex-direction: column; justify-content: center;
+        }
+        .stat-card:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(0,0,0,0.15); }
+        .stat-value { font-size: clamp(16px, 4vw, 20px); font-weight: 700; color: white; margin-bottom: 5px; }
+        .stat-label { font-size: 12px; color: rgba(255,255,255,0.8); text-transform: uppercase; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; margin-bottom: 8px; font-weight: 600; color: white; font-size: 14px; }
+        .type-buttons { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); 
+            gap: 10px; margin-bottom: 5px; 
+        }
+        .type-btn {
+            padding: 15px 16px; border: 2px solid rgba(255,255,255,0.3); border-radius: 15px;
+            background: rgba(255,255,255,0.1); backdrop-filter: blur(10px); cursor: pointer;
+            text-align: center; font-weight: 600; font-size: 14px; transition: all 0.3s ease; color: white;
+            min-height: 50px; display: flex; align-items: center; justify-content: center;
+            -webkit-tap-highlight-color: transparent; user-select: none;
+        }
+        .type-btn:hover { border-color: #4CAF50; background: rgba(76,175,80,0.2); transform: translateY(-2px); }
+        .type-btn.active {
+            background: linear-gradient(135deg, #4CAF50, #45a049); color: white;
+            border-color: #4CAF50; box-shadow: 0 8px 25px rgba(76,175,80,0.3);
+        }
+        select, input {
+            width: 100%; padding: 15px 16px; border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 15px; font-size: 16px; transition: all 0.3s ease;
+            background: rgba(255,255,255,0.1); backdrop-filter: blur(10px); color: white;
+            min-height: 50px; -webkit-appearance: none;
+        }
+        select:focus, input:focus {
+            outline: none; border-color: #4CAF50; box-shadow: 0 0 20px rgba(76,175,80,0.3);
+            background: rgba(255,255,255,0.15);
+        }
+        select option { background: #333; color: white; }
+        input::placeholder { color: rgba(255,255,255,0.7); }
+        .amount-wrapper { position: relative; }
+        .amount-wrapper::before {
+            content: '₱'; position: absolute; left: 16px; top: 50%; transform: translateY(-50%);
+            font-weight: bold; color: rgba(255,255,255,0.8); z-index: 1; pointer-events: none;
+        }
+        .amount-wrapper input { padding-left: 40px; font-weight: 600; }
+        .submit-btn {
+            width: 100%; background: linear-gradient(135deg, #4CAF50, #45a049); color: white;
+            padding: 18px; border: none; border-radius: 15px; font-size: 16px; font-weight: 600;
+            cursor: pointer; transition: all 0.3s ease; margin-bottom: 15px;
+            box-shadow: 0 8px 25px rgba(76,175,80,0.3); min-height: 56px;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .submit-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 12px 35px rgba(76,175,80,0.4); }
+        .submit-btn:disabled { background: rgba(255,255,255,0.2); cursor: not-allowed; transform: none; }
+        .success-msg {
+            background: linear-gradient(135deg, #4CAF50, #45a049); color: white;
+            padding: 15px 16px; border-radius: 15px; text-align: center; font-weight: 600;
+            margin-bottom: 15px; display: none; box-shadow: 0 8px 25px rgba(76,175,80,0.3);
+        }
+        .action-buttons { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); 
+            gap: 10px; margin-bottom: 20px; 
+        }
+        .action-btn {
+            background: rgba(255,255,255,0.1); backdrop-filter: blur(10px);
+            color: white; padding: 12px 10px; border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+            transition: all 0.3s ease; text-align: center; min-height: 44px;
+            display: flex; align-items: center; justify-content: center;
+            -webkit-tap-highlight-color: transparent; user-select: none;
+        }
+        .action-btn:hover { background: rgba(255,255,255,0.2); transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.1); }
+        .notification {
+            position: fixed; top: 20px; right: 20px; padding: 15px 20px; border-radius: 12px;
+            color: white; font-weight: 600; font-size: 14px; z-index: 3000;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.2); transform: translateX(400px);
+            transition: transform 0.3s ease; max-width: 300px; backdrop-filter: blur(10px);
+        }
+        .notification.show { transform: translateX(0); }
+        .notification.success { background: linear-gradient(135deg, #4CAF50, #45a049); }
+        .notification.error { background: linear-gradient(135deg, #ff6b6b, #ff5252); }
+        .notification.info { background: linear-gradient(135deg, #2196F3, #1976D2); }
+        .modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100vh; height: 100dvh;
+            background: rgba(0,0,0,0.7); display: none; justify-content: center; align-items: center;
+            z-index: 2000; backdrop-filter: blur(5px); padding: 20px;
+        }
+        .modal-content {
+            background: rgba(255,255,255,0.15); backdrop-filter: blur(20px);
+            border-radius: 20px; padding: 30px; max-width: 400px; width: 100%;
+            border: 1px solid rgba(255,255,255,0.2); box-shadow: 0 25px 50px rgba(0,0,0,0.3);
+        }
+        .modal h3 { color: white; text-align: center; margin-bottom: 20px; font-size: 22px; }
+        .modal input { margin-bottom: 15px; }
+        .modal-buttons { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
+        .modal-btn {
+            flex: 1; padding: 12px; border: none; border-radius: 10px; min-width: 120px;
+            font-weight: 600; cursor: pointer; transition: all 0.3s ease; min-height: 44px;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .modal-btn.primary { background: linear-gradient(135deg, #4CAF50, #45a049); color: white; }
+        .modal-btn.secondary { background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.3); }
+        .modal-btn:hover { transform: translateY(-2px); }
+        .timeout-warning {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(255,152,0,0.95); color: white; padding: 20px; border-radius: 15px;
+            text-align: center; z-index: 3000; display: none; backdrop-filter: blur(10px);
+            box-shadow: 0 25px 50px rgba(0,0,0,0.3); max-width: 320px; margin: 20px;
+        }
+        .timeout-warning button {
+            background: white; color: #ff9800; border: none; padding: 10px 16px;
+            border-radius: 8px; margin-top: 10px; cursor: pointer; font-weight: 600;
+            min-height: 40px; -webkit-tap-highlight-color: transparent;
+        }
+        
+        /* Enhanced Mobile Styles */
+        @media (max-width: 768px) {
+            body { padding: 15px; }
+            .container { padding: 25px; }
+            .pin-container { padding: 30px 20px; }
+            .pin-box { width: 55px; height: 55px; font-size: 22px; }
+            .pin-input-container { gap: 12px; }
+            .type-buttons { grid-template-columns: 1fr 1fr; gap: 8px; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+            .action-buttons { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+            .notification { right: 15px; left: 15px; max-width: none; }
+            .top-bar { align-items: stretch; }
+        }
+        
+        @media (max-width: 480px) {
+            body { padding: 10px; }
+            .container { padding: 20px; margin: 10px auto; }
+            .pin-container { padding: 25px 15px; }
+            .pin-box { width: 50px; height: 50px; font-size: 20px; }
+            .pin-input-container { gap: 8px; }
+            .type-buttons { grid-template-columns: 1fr; gap: 6px; }
+            .stats-grid { grid-template-columns: 1fr; gap: 8px; }
+            .action-buttons { grid-template-columns: 1fr; gap: 6px; }
+            .notification { right: 10px; left: 10px; }
+            .modal-buttons { flex-direction: column; }
+            .modal-btn { min-width: auto; }
+        }
+        
+        /* Landscape orientation on mobile */
+        @media (max-height: 500px) and (orientation: landscape) {
+            .pin-container, .container { margin: 10px auto; }
+            body { padding: 10px; }
+        }
+        
+        /* High DPI displays */
+        @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+            .floating-circle { backdrop-filter: blur(15px); }
+        }
+        
+        /* Dark mode support */
+        @media (prefers-color-scheme: dark) {
+            select option { background: #222; }
+        }
+        
+        /* Reduced motion preference */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { 
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+        
+        /* Focus styles for keyboard navigation */
+        .type-btn:focus, .action-btn:focus, .modal-btn:focus, .pin-submit:focus, .logout-btn:focus, .submit-btn:focus {
+            outline: 2px solid #4CAF50;
+            outline-offset: 2px;
+        }
+        
+        /* iOS Safari specific fixes */
+        @supports (-webkit-touch-callout: none) {
+            .pin-box, input, select, button {
+                -webkit-appearance: none;
+                border-radius: 15px;
+            }
+            
+            body {
+                -webkit-text-size-adjust: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Floating Background -->
+    <div class="floating-bg">
+        <div class="floating-circle"></div>
+        <div class="floating-circle"></div>
+        <div class="floating-circle"></div>
+    </div>
+
+    <!-- Loading Screen -->
+    <div class="loading-screen" id="loadingScreen">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <h2>Loading GCash Logger...</h2>
+            <p>Connecting to Google Sheets...</p>
+        </div>
+    </div>
+
+    <!-- PIN Authentication Screen -->
+    <div class="pin-screen" id="pinScreen" style="display: none;">
+        <div class="pin-container">
+            <div class="pin-header">
+                <h2>🔐 Secure Access</h2>
+                <p>Enter your 4-digit PIN to continue</p>
+            </div>
+            <div class="pin-input-container">
+                <input type="password" class="pin-box" maxlength="1" id="pin1" inputmode="numeric">
+                <input type="password" class="pin-box" maxlength="1" id="pin2" inputmode="numeric">
+                <input type="password" class="pin-box" maxlength="1" id="pin3" inputmode="numeric">
+                <input type="password" class="pin-box" maxlength="1" id="pin4" inputmode="numeric">
+            </div>
+            <div class="pin-error" id="pinError">Incorrect PIN. Please try again.</div>
+            <button class="pin-submit" id="pinSubmit" onclick="verifyPin()">🚀 Access Dashboard</button>
+        </div>
+    </div>
+
+    <!-- Session Timeout Warning -->
+    <div class="timeout-warning" id="timeoutWarning">
+        <h3>⏰ Session Expiring</h3>
+        <p>Your session will expire in <span id="timeoutCounter">60</span> seconds due to inactivity.</p>
+        <button onclick="extendSession()">Stay Logged In</button>
+    </div>
+
+    <!-- Change PIN Modal -->
+    <div class="modal" id="pinModal">
+        <div class="modal-content">
+            <h3>🔐 Change PIN</h3>
+            <input type="password" id="currentPin" placeholder="Current PIN" maxlength="4" inputmode="numeric">
+            <input type="password" id="newPin" placeholder="New PIN (4 digits)" maxlength="4" inputmode="numeric">
+            <input type="password" id="confirmPin" placeholder="Confirm New PIN" maxlength="4" inputmode="numeric">
+            <div class="modal-buttons">
+                <button class="modal-btn secondary" onclick="closePinModal()">Cancel</button>
+                <button class="modal-btn primary" onclick="changePIN()">Change PIN</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App Container -->
+    <div class="app-container" id="appContainer">
+        <div class="container">
+            <div class="top-bar">
+                <div class="connection-status online" id="connectionStatus">
+                    <span>●</span> Online
+                </div>
+                <button class="logout-btn" onclick="logout()">🚪 Logout</button>
+            </div>
+
+            <div class="header">
+                <h1>💰 GCash Transaction Logger</h1>
+                <p>Track your GCash transactions seamlessly</p>
+            </div>
+
+            <div class="summary">
+                <h3>📊 Today's Summary</h3>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalTransactions">0</div>
+                        <div class="stat-label">Transactions</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalAmount">₱0</div>
+                        <div class="stat-label">Total Amount</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="cashIn">₱0</div>
+                        <div class="stat-label">Cash In</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="cashOut">₱0</div>
+                        <div class="stat-label">Cash Out</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="action-buttons">
+                <button class="action-btn" onclick="exportToCSV()">📥 Export CSV</button>
+                <button class="action-btn" onclick="refreshData()">🔄 Refresh</button>
+                <button class="action-btn" onclick="openPinModal()">🔐 Change PIN</button>
+                <button class="action-btn" onclick="clearForm()">🗑️ Clear Form</button>
+            </div>
+
+            <div class="success-msg" id="successMsg"></div>
+
+            <form id="transactionForm">
+                <div class="form-group">
+                    <label>Service Type</label>
+                    <div class="type-buttons">
+                        <div class="type-btn active" data-type="Cash In">💵 Cash In</div>
+                        <div class="type-btn" data-type="Cash Out">💸 Cash Out</div>
+                        <div class="type-btn" data-type="Bills Payment">📄 Bills Payment</div>
+                        <div class="type-btn" data-type="Money Transfer">💰 Money Transfer</div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Payment Method</label>
+                    <select id="method" required>
+                        <option value="">Select Method</option>
+                        <option value="Bank Transfer">Bank Transfer</option>
+                        <option value="Cash">Cash</option>
+                        <option value="GCash">GCash</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Amount</label>
+                    <div class="amount-wrapper">
+                        <input type="number" id="amount" placeholder="0.00" step="0.01" min="0" required inputmode="decimal">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Customer Name/ID (Optional)</label>
+                    <input type="text" id="customer" placeholder="Enter customer info">
+                </div>
+
+                <div class="form-group">
+                    <label>Reference Number (Optional)</label>
+                    <input type="text" id="reference" placeholder="Enter reference number">
+                </div>
+
+                <button type="submit" class="submit-btn" id="submitBtn">
+                    💾 Add Transaction
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // ⚠️ IMPORTANT: Replace this with your actual Google Apps Script Web App URL
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzSth-UdlAYTBhG2gNZ0zuwilVg1SFr4-zTEEbX1KudrBmlxr7oppdoSotZLdgMLJJ-0g/exec';
+        
+        // Enhanced connection test with better error handling
+        async function testConnection() {
+            console.log('🔗 Testing connection to:', SCRIPT_URL);
+            
+            // Check if URL is configured
+            if (SCRIPT_URL.includes('PASTE_YOUR_DEPLOYED') || SCRIPT_URL.includes('YOUR_SCRIPT_ID')) {
+                console.error('❌ SCRIPT_URL is not configured! Please update with your actual deployed URL.');
+                showNotification('⚠️ Please configure SCRIPT_URL in the code', 'error');
+                return false;
+            }
+            
+            try {
+                // Test with a simple test endpoint first
+                const testResponse = await fetch(SCRIPT_URL + '?action=test', {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                if (!testResponse.ok) {
+                    throw new Error(`HTTP ${testResponse.status}: ${testResponse.statusText}`);
+                }
+                
+                const testResult = await testResponse.json();
+                if (testResult.success) {
+                    console.log('✅ Test connection successful:', testResult);
+                    
+                    // Now test actual data retrieval
+                    const dataResponse = await fetch(SCRIPT_URL + '?action=getTransactions');
+                    const dataResult = await dataResponse.json();
+                    
+                    console.log('✅ Data retrieval test:', dataResult);
+                    return dataResult.success;
+                } else {
+                    throw new Error(testResult.message);
+                }
+                
+            } catch (error) {
+                console.error('❌ Connection test failed:', error);
+                
+                // Provide helpful error messages
+                if (error.message.includes('404')) {
+                    showNotification('❌ Web App not found. Check your deployment URL.', 'error');
+                } else if (error.message.includes('403')) {
+                    showNotification('❌ Permission denied. Check Web App access settings.', 'error');
+                } else if (error.message.includes('Failed to fetch')) {
+                    showNotification('❌ Network error. Check your internet connection.', 'error');
+                } else {
+                    showNotification('❌ Connection failed: ' + error.message, 'error');
+                }
+                
+                return false;
+            }
+        }
+        
+        // Security Configuration
+        let userPin = localStorage.getItem('userPin') || '1234';
+        let isAuthenticated = sessionStorage.getItem('authenticated') === 'true';
+        let sessionTimeout;
+        let timeoutWarning;
+        let selectedType = 'Cash In';
+
+        // Initialize app
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(() => {
+                document.getElementById('loadingScreen').style.display = 'none';
+                if (isAuthenticated) {
+                    showApp();
+                    startSessionTimer();
+                } else {
+                    showPinScreen();
+                }
+            }, 2000);
+
+            setupEventListeners();
+            loadTransactionData();
+        });
+
+        function setupEventListeners() {
+            // PIN input handlers
+            document.querySelectorAll('.pin-box').forEach((box, index) => {
+                box.addEventListener('input', (e) => handlePinInput(e, index));
+                box.addEventListener('keydown', (e) => handlePinKeydown(e, index));
+            });
+
+            // Type button handlers
+            document.querySelectorAll('.type-btn').forEach(btn => {
+                btn.addEventListener('click', () => selectType(btn));
+            });
+
+            // Form submission
+            document.getElementById('transactionForm').addEventListener('submit', handleSubmit);
+
+            // Keyboard shortcuts
+            document.addEventListener('keydown', handleKeyboardShortcuts);
+
+            // Activity detection for session management
+            ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'touchmove'].forEach(event => {
+                document.addEventListener(event, resetSessionTimer, { passive: true });
+            });
+            
+            // Enhanced touch support
+            document.querySelectorAll('.type-btn, .action-btn, .pin-submit, .logout-btn, .submit-btn').forEach(btn => {
+                btn.addEventListener('touchstart', function() {
+                    this.style.transform = 'scale(0.98)';
+                }, { passive: true });
+                
+                btn.addEventListener('touchend', function() {
+                    setTimeout(() => {
+                        this.style.transform = '';
+                    }, 150);
+                }, { passive: true });
+            });
+        }
+
+        function handlePinInput(e, index) {
+            const boxes = document.querySelectorAll('.pin-box');
+            const value = e.target.value;
+            
+            // Only allow numbers
+            if (!/^\d*$/.test(value)) {
+                e.target.value = '';
+                return;
+            }
+            
+            if (value && index < 3) {
+                boxes[index + 1].focus();
+            }
+            clearPinError();
+        }
+
+        function handlePinKeydown(e, index) {
+            const boxes = document.querySelectorAll('.pin-box');
+            if (e.key === 'Backspace' && !e.target.value && index > 0) {
+                boxes[index - 1].focus();
+            }
+            if (e.key === 'Enter') {
+                verifyPin();
+            }
+        }
+
+        function verifyPin() {
+            const enteredPin = Array.from(document.querySelectorAll('.pin-box'))
+                .map(box => box.value).join('');
+            
+            if (enteredPin.length !== 4) {
+                showPinError('Please enter all 4 digits');
+                return;
+            }
+            
+            if (enteredPin === userPin) {
+                isAuthenticated = true;
+                sessionStorage.setItem('authenticated', 'true');
+                showApp();
+                startSessionTimer();
+                vibrate(100);
+            } else {
+                showPinError('Incorrect PIN. Please try again.');
+                vibrate([100, 50, 100]);
+            }
+        }
+
+        function showPinError(message = 'Incorrect PIN. Please try again.') {
+            const boxes = document.querySelectorAll('.pin-box');
+            const error = document.getElementById('pinError');
+            
+            boxes.forEach(box => {
+                box.classList.add('error');
+                box.value = '';
+            });
+            error.textContent = message;
+            error.classList.add('show');
+            boxes[0].focus();
+            
+            setTimeout(() => {
+                boxes.forEach(box => box.classList.remove('error'));
+                error.classList.remove('show');
+            }, 3000);
+        }
+
+        function clearPinError() {
+            document.getElementById('pinError').classList.remove('show');
+        }
+
+        function showPinScreen() {
+            document.getElementById('pinScreen').style.display = 'flex';
+            document.getElementById('appContainer').classList.remove('show');
+            setTimeout(() => document.getElementById('pin1').focus(), 100);
+        }
+
+        function showApp() {
+            document.getElementById('pinScreen').style.display = 'none';
+            document.getElementById('appContainer').classList.add('show');
+            loadFormData();
+            refreshData();
+        }
+
+        function logout() {
+            isAuthenticated = false;
+            sessionStorage.removeItem('authenticated');
+            clearTimeout(sessionTimeout);
+            clearTimeout(timeoutWarning);
+            showNotification('Logged out successfully', 'info');
+            showPinScreen();
+        }
+
+        function startSessionTimer() {
+            clearTimeout(sessionTimeout);
+            clearTimeout(timeoutWarning);
+            
+            timeoutWarning = setTimeout(() => {
+                showTimeoutWarning();
+            }, 29 * 60 * 1000); // 29 minutes
+            
+            sessionTimeout = setTimeout(() => {
+                logout();
+                showNotification('Session expired due to inactivity', 'error');
+            }, 30 * 60 * 1000); // 30 minutes
+        }
+
+        function resetSessionTimer() {
+            if (isAuthenticated) {
+                startSessionTimer();
+            }
+        }
+
+        function showTimeoutWarning() {
+            const warning = document.getElementById('timeoutWarning');
+            warning.style.display = 'block';
+            let countdown = 60;
+            
+            const timer = setInterval(() => {
+                document.getElementById('timeoutCounter').textContent = countdown;
+                countdown--;
+                
+                if (countdown < 0) {
+                    clearInterval(timer);
+                    warning.style.display = 'none';
+                }
+            }, 1000);
+        }
+
+        function extendSession() {
+            document.getElementById('timeoutWarning').style.display = 'none';
+            startSessionTimer();
+            showNotification('Session extended', 'success');
+        }
+
+        function selectType(btn) {
+            document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            selectedType = btn.dataset.type;
+            vibrate(50);
+        }
+
+        async function handleSubmit(e) {
+            e.preventDefault();
+            
+            if (!validateForm()) {
+                return;
+            }
+            
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = true;
+            submitBtn.textContent = '💾 Adding...';
+            
+            const now = new Date();
+            
+            const transaction = {
+                id: document.getElementById('reference').value || generateRefNumber(),
+                date: now.toLocaleDateString('en-PH'),
+                time: now.toLocaleTimeString('en-PH'),
+                type: selectedType,
+                method: document.getElementById('method').value,
+                amount: parseFloat(document.getElementById('amount').value),
+                customer: document.getElementById('customer').value,
+                timestamp: now.toISOString()
+            };
+            
+            try {
+                const response = await makeRequest(SCRIPT_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'addTransaction', transaction })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showNotification('Transaction added successfully!', 'success');
+                    showSuccessMessage('Transaction saved to Google Sheets');
+                    vibrate(100);
+                    clearForm();
+                    refreshData();
+                } else {
+                    throw new Error(result.message);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showNotification('Failed to add transaction: ' + error.message, 'error');
+                vibrate([100, 50, 100, 50, 100]);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = '💾 Add Transaction';
+            }
+        }
+
+        function generateRefNumber() {
+            return '4052' + Date.now().toString().slice(-8);
+        }
+
+        async function loadTransactionData() {
+            try {
+                const response = await makeRequest(SCRIPT_URL + '?action=getTransactions');
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    updateSummary(result.data || []);
+                    updateConnectionStatus(true);
+                } else {
+                    throw new Error(result.message);
+                }
+            } catch (error) {
+                console.error('Error loading data:', error);
+                updateConnectionStatus(false);
+                showNotification('Failed to load data', 'error');
+            }
+        }
+
+        function updateSummary(transactions) {
+            const today = new Date().toLocaleDateString('en-PH');
+            const todayTransactions = transactions.filter(t => t.date === today);
+            
+            const stats = todayTransactions.reduce((acc, t) => {
+                acc.total += t.amount;
+                acc.count++;
+                if (t.type === 'Cash In') acc.cashIn += t.amount;
+                else acc.cashOut += t.amount;
+                return acc;
+            }, { total: 0, count: 0, cashIn: 0, cashOut: 0 });
+            
+            document.getElementById('totalTransactions').textContent = stats.count;
+            document.getElementById('totalAmount').textContent = `₱${stats.total.toLocaleString()}`;
+            document.getElementById('cashIn').textContent = `₱${stats.cashIn.toLocaleString()}`;
+            document.getElementById('cashOut').textContent = `₱${stats.cashOut.toLocaleString()}`;
+        }
+
+        function updateConnectionStatus(online) {
+            const status = document.getElementById('connectionStatus');
+            status.className = online ? 'connection-status online' : 'connection-status offline';
+            status.innerHTML = online ? '<span>●</span> Online' : '<span>●</span> Offline';
+        }
+
+        function refreshData() {
+            showNotification('Refreshing data...', 'info');
+            loadTransactionData();
+        }
+
+        function clearForm() {
+            document.getElementById('transactionForm').reset();
+            document.querySelector('.type-btn').click();
+            sessionStorage.removeItem('formData');
+            showNotification('Form cleared', 'info');
+        }
+
+        async function exportToCSV() {
+            try {
+                const response = await makeRequest(SCRIPT_URL + '?action=getTransactions');
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const result = await response.json();
+                
+                if (result.success && result.data.length > 0) {
+                    const csvContent = generateCSV(result.data);
+                    downloadCSV(csvContent, 'gcash_transactions_' + new Date().toISOString().split('T')[0] + '.csv');
+                    showNotification('Export successful!', 'success');
+                } else {
+                    showNotification('No data to export', 'info');
+                }
+            } catch (error) {
+                showNotification('Export failed: ' + error.message, 'error');
+            }
+        }
+
+        function generateCSV(data) {
+            const headers = ['Date', 'Time', 'Reference No.', 'Customer', 'Service Type', 'Payment Method', 'Amount'];
+            const csvRows = [headers.join(',')];
+            
+            data.forEach(transaction => {
+                const row = [
+                    transaction.date,
+                    transaction.time,
+                    transaction.id,
+                    `"${transaction.customer || ''}"`,
+                    transaction.type,
+                    transaction.method,
+                    transaction.amount
+                ];
+                csvRows.push(row.join(','));
+            });
+            
+            return csvRows.join('\n');
+        }
+
+        function downloadCSV(csvContent, filename) {
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', filename);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+        function openPinModal() {
+            document.getElementById('pinModal').style.display = 'flex';
+        }
+
+        function closePinModal() {
+            document.getElementById('pinModal').style.display = 'none';
+            document.getElementById('currentPin').value = '';
+            document.getElementById('newPin').value = '';
+            document.getElementById('confirmPin').value = '';
+        }
+
+        function changePIN() {
+            const current = document.getElementById('currentPin').value;
+            const newPin = document.getElementById('newPin').value;
+            const confirm = document.getElementById('confirmPin').value;
+            
+            if (current !== userPin) {
+                showNotification('Current PIN is incorrect', 'error');
+                return;
+            }
+            
+            if (newPin.length !== 4 || !/^\d{4}$/.test(newPin)) {
+                showNotification('New PIN must be 4 digits', 'error');
+                return;
+            }
+            
+            if (newPin !== confirm) {
+                showNotification('PINs do not match', 'error');
+                return;
+            }
+            
+            userPin = newPin;
+            localStorage.setItem('userPin', userPin);
+            closePinModal();
+            showNotification('PIN changed successfully!', 'success');
+        }
+
+        function showNotification(message, type) {
+            // Remove any existing notification
+            const existingNotification = document.querySelector('.notification');
+            if (existingNotification) {
+                existingNotification.remove();
+            }
+            
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => notification.classList.add('show'), 100);
+            setTimeout(() => {
+                notification.classList.remove('show');
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        notification.parentNode.removeChild(notification);
+                    }
+                }, 300);
+            }, 4000);
+        }
+
+        function handleKeyboardShortcuts(e) {
+            if (e.altKey && e.key === '1') {
+                e.preventDefault();
+                document.querySelector('[data-type="Cash In"]').click();
+            }
+            if (e.altKey && e.key === '2') {
+                e.preventDefault();
+                document.querySelector('[data-type="Cash Out"]').click();
+            }
+            if (e.altKey && e.key === '3') {
+                e.preventDefault();
+                document.querySelector('[data-type="Bills Payment"]').click();
+            }
+            if (e.altKey && e.key === '4') {
+                e.preventDefault();
+                document.querySelector('[data-type="Money Transfer"]').click();
+            }
+            if (e.altKey && e.key === 'l') {
+                e.preventDefault();
+                logout();
+            }
+            if (e.altKey && e.key === 'r') {
+                e.preventDefault();
+                refreshData();
+            }
+            if (e.altKey && e.key === 'c') {
+                e.preventDefault();
+                clearForm();
+            }
+        }
+
+        // Auto-save form data
+        function saveFormData() {
+            const formData = {
+                type: selectedType,
+                method: document.getElementById('method').value,
+                amount: document.getElementById('amount').value,
+                customer: document.getElementById('customer').value,
+                reference: document.getElementById('reference').value
+            };
+            sessionStorage.setItem('formData', JSON.stringify(formData));
+        }
+
+        function loadFormData() {
+            try {
+                const saved = JSON.parse(sessionStorage.getItem('formData'));
+                if (saved) {
+                    document.querySelector(`[data-type="${saved.type}"]`)?.click();
+                    document.getElementById('method').value = saved.method;
+                    document.getElementById('amount').value = saved.amount;
+                    document.getElementById('customer').value = saved.customer;
+                    document.getElementById('reference').value = saved.reference;
+                }
+            } catch (e) {
+                console.log('No saved form data');
+            }
+        }
+
+        // Auto-save on input
+        document.addEventListener('input', saveFormData);
+
+        // Enhanced offline detection
+        window.addEventListener('online', () => {
+            updateConnectionStatus(true);
+            showNotification('Connection restored', 'success');
+            refreshData();
+        });
+
+        window.addEventListener('offline', () => {
+            updateConnectionStatus(false);
+            showNotification('You are offline', 'info');
+        });
+
+        // Prevent form submission on Enter in input fields (except submit button)
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'submit') {
+                e.preventDefault();
+                const form = e.target.form;
+                const inputs = Array.from(form.querySelectorAll('input, select'));
+                const currentIndex = inputs.indexOf(e.target);
+                const nextInput = inputs[currentIndex + 1];
+                
+                if (nextInput) {
+                    nextInput.focus();
+                } else {
+                    form.querySelector('button[type="submit"]').focus();
+                }
+            }
+        });
+
+        // Add visual feedback for successful form submission
+        function showSuccessMessage(message) {
+            const successMsg = document.getElementById('successMsg');
+            successMsg.textContent = message;
+            successMsg.style.display = 'block';
+            
+            setTimeout(() => {
+                successMsg.style.display = 'none';
+            }, 3000);
+        }
+
+        // Enhanced error handling for network issues
+        async function makeRequest(url, options = {}) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+            
+            try {
+                const response = await fetch(url, {
+                    ...options,
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+                return response;
+            } catch (error) {
+                clearTimeout(timeoutId);
+                if (error.name === 'AbortError') {
+                    throw new Error('Request timed out');
+                }
+                throw error;
+            }
+        }
+
+        // Add haptic feedback for mobile devices
+        function vibrate(pattern = 50) {
+            if ('vibrate' in navigator) {
+                navigator.vibrate(pattern);
+            }
+        }
+
+        // Enhanced form validation
+        function validateForm() {
+            const amount = document.getElementById('amount').value;
+            const method = document.getElementById('method').value;
+            
+            if (!amount || parseFloat(amount) <= 0) {
+                showNotification('Please enter a valid amount', 'error');
+                vibrate([100, 50, 100]);
+                document.getElementById('amount').focus();
+                return false;
+            }
+            
+            if (!method) {
+                showNotification('Please select a payment method', 'error');
+                vibrate([100, 50, 100]);
+                document.getElementById('method').focus();
+                return false;
+            }
+            
+            return true;
+        }
+
+        // Initialize connection test on load
+        window.addEventListener('load', () => {
+            if (SCRIPT_URL !== 'PASTE_YOUR_DEPLOYED_WEB_APP_URL_HERE') {
+                testConnection();
+            }
+        });
+
+        // Service Worker for PWA functionality
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                const swCode = `
+                    const CACHE_NAME = 'gcash-logger-v1';
+                    const urlsToCache = [];
+                    
+                    self.addEventListener('install', event => {
+                        event.waitUntil(
+                            caches.open(CACHE_NAME)
+                                .then(cache => cache.addAll(urlsToCache))
+                        );
+                    });
+                    
+                    self.addEventListener('fetch', event => {
+                        event.respondWith(
+                            caches.match(event.request)
+                                .then(response => response || fetch(event.request))
+                        );
+                    });
+                `;
+                
+                const blob = new Blob([swCode], { type: 'text/javascript' });
+                const swUrl = URL.createObjectURL(blob);
+                
+                navigator.serviceWorker.register(swUrl)
+                    .then(() => console.log('SW registered'))
+                    .catch(() => console.log('SW registration failed'));
+            });
+        }
+
+        console.log('🚀 GCash Transaction Logger initialized successfully!');
+        console.log('📱 Features: PIN Security, Session Management, Auto-save, Offline Detection');
+        console.log('⌨️ Keyboard shortcuts: Alt+1-4 (Transaction Types), Alt+L (Logout), Alt+R (Refresh), Alt+C (Clear)');
+        console.log('📱 Mobile optimized with touch support, haptic feedback, and responsive design');
+    </script>
+</body>
+</html>
