@@ -744,7 +744,7 @@
             };
             
             try {
-                const response = await makeRequest(https://script.google.com/macros/s/AKfycbwgNE1P5FgRT5WXiuKpaXMdGhSbz3I3vxWQ6wLjNA_Nm9TwutAYWBgnbzXV_m6TyP4BxQ/exec, {
+                const response = await makeRequest(SCRIPT_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action: 'addTransaction', transaction })
@@ -1188,6 +1188,7 @@ async function loadTransactionData() {
 </body>
 
 </html>
+
 
 
 
