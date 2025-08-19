@@ -775,36 +775,73 @@
             }
         }
 
+
         function generateRefNumber() {
             return '4052' + Date.now().toString().slice(-8);
         }
 
-        async function loadTransactionData() {
-            try {
-                const response = await makeRequest(SCRIPT_URL + '?action=getTransactions');
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    updateSummary(result.data || []);
-                    updateConnectionStatus(true);
-                } else {
-                    throw new Error(result.message);
-                }
-            } catch (error) {
-                console.error('Error loading data:', error);
-                updateConnectionStatus(false);
-                showNotification('Failed to load data', 'error');
-            }
+        // Add this function to handle date parsing safely
+function parseTransactionDate(dateString) {
+    if (!dateString) return new Date();
+    
+    // Handle various date formats
+    const date = new Date(dateString);
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+        console.warn('Invalid date found:', dateString, 'Using current date instead');
+        return new Date();
+    }
+    
+    return date;
+}
+
+// Updated loadTransactionData function
+async function loadTransactionData() {
+    try {
+        const response = await makeRequest(SCRIPT_URL + '?action=getTransactions');
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            // Validate and fix dates in the data
+            const validatedData = (result.data || []).map(transaction => ({
+                ...transaction,
+                date: transaction.date ? parseTransactionDate(transaction.date) : new Date(),
+                timestamp: transaction.timestamp ? parseTransactionDate(transaction.timestamp) : new Date()
+            }));
+            
+            updateSummary(validatedData);
+            updateConnectionStatus(true);
+        } else {
+            throw new Error(result.message);
+        }
+    } catch (error) {
+        console.error('Error loading data:', error);
+        updateConnectionStatus(false);
+        showNotification('Failed to load data', 'error');
+        // Return empty array instead of throwing
+        updateSummary([]);
+    }
+}
 
         function updateSummary(transactions) {
             const today = new Date().toLocaleDateString('en-PH');
-            const todayTransactions = transactions.filter(t => t.date === today);
+           const todayTransactions = transactions.filter(t => {
+    let transactionDate;
+    if (t.date instanceof Date) {
+        transactionDate = t.date.toLocaleDateString('en-PH');
+    } else if (typeof t.date === 'string') {
+        transactionDate = t.date;
+    } else {
+        transactionDate = new Date(t.date).toLocaleDateString('en-PH');
+    }
+    return transactionDate === today;
+});
             
             const stats = todayTransactions.reduce((acc, t) => {
                 acc.total += t.amount;
@@ -865,15 +902,16 @@
             const csvRows = [headers.join(',')];
             
             data.forEach(transaction => {
-                const row = [
-                    transaction.date,
-                    transaction.time,
-                    transaction.id,
-                    `"${transaction.customer || ''}"`,
-                    transaction.type,
-                    transaction.method,
-                    transaction.amount
-                ];
+               const row = [
+    transaction.date instanceof Date ? transaction.date.toLocaleDateString('en-PH') : 
+    (typeof transaction.date === 'string' ? transaction.date : new Date(transaction.date).toLocaleDateString('en-PH')),
+    transaction.time,
+    transaction.id,
+    `"${transaction.customer || ''}"`,
+    transaction.type,
+    transaction.method,
+    transaction.amount
+];
                 csvRows.push(row.join(','));
             });
             
@@ -1150,4 +1188,5 @@
 </body>
 
 </html>
+
 
